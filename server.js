@@ -1,10 +1,24 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const app = express();
 const PORT = process.env.PORT || 3000; // en la nube el puerto lo asigna la plataforma
 
-app.use(cors());          // permite peticiones desde otra página (P1)
-app.use(express.json());  // convierte el cuerpo de la petición a objeto JS
+const ORIGENES = (process.env.ORIGEN_PERMITIDO || "")
+  .split(",")
+  .map(origen => origen.trim())
+  .filter(Boolean);
+
+app.use(cors({ origin: ORIGENES })); // solo estas páginas pueden usar la API
+app.use(express.json());             // convierte el cuerpo de la petición a objeto JS
+
+// Revisa el token en las rutas que modifican datos
+function requiereToken(req, res, next) {
+  if (req.get("x-api-key") !== process.env.API_KEY) {
+    return res.status(401).json({ error: "Token inválido o ausente" });
+  }
+  next(); // el token es correcto, continúa a la ruta
+}
 
 // Datos en memoria
 let productos = [
@@ -17,12 +31,14 @@ app.get("/", (req, res) => {
   res.json({ mensaje: "API de productos funcionando" });
 });
 
+app.get("/api/salud", (req, res) => res.json({ estado: "ok" }));
+
 app.get("/api/productos", (req, res) => {
   res.status(200).json(productos);
 });
 
 app.get("/api/productos/:id", (req, res) => {
-  const id = Number(req.params.id);          // :id llega como texto, hay que convertirlo
+  const id = Number(req.params.id);
   const producto = productos.find(p => p.id === id);
   if (!producto) {
     return res.status(404).json({ error: `No existe el producto ${id}` });
@@ -38,7 +54,7 @@ function validar(datos) {
   return errores;
 }
 
-app.post("/api/productos", (req, res) => {
+app.post("/api/productos", requiereToken, (req, res) => {
   const errores = validar(req.body);
   if (errores.length > 0) {
     return res.status(400).json({ errores });
@@ -48,7 +64,7 @@ app.post("/api/productos", (req, res) => {
   res.status(201).json(nuevo);
 });
 
-app.put("/api/productos/:id", (req, res) => {
+app.put("/api/productos/:id", requiereToken, (req, res) => {
   const id = Number(req.params.id);
   const indice = productos.findIndex(p => p.id === id);
   if (indice === -1) return res.status(404).json({ error: `No existe el producto ${id}` });
@@ -60,7 +76,7 @@ app.put("/api/productos/:id", (req, res) => {
   res.status(200).json(productos[indice]);
 });
 
-app.delete("/api/productos/:id", (req, res) => {
+app.delete("/api/productos/:id", requiereToken, (req, res) => {
   const id = Number(req.params.id);
   const existe = productos.some(p => p.id === id);
   if (!existe) return res.status(404).json({ error: `No existe el producto ${id}` });
